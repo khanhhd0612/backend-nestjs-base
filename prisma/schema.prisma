@@ -1,0 +1,23 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "mongodb"
+    url      = env("DATABASE_URL")
+}
+
+model User {
+    id              String    @id @default(auto()) @map("_id") @db.ObjectId
+    email           String    @unique
+    password        String
+    fullName        String    @map("full_name")
+    role            String    @default("user")
+    isActive        Boolean   @default(true) @map("is_active")
+    tokenValidAfter DateTime  @default(now()) @map("token_valid_after")
+    createdAt       DateTime  @default(now()) @map("created_at")
+    updatedAt       DateTime  @updatedAt @map("updated_at")
+    deletedAt       DateTime? @map("deleted_at")
+
+    @@map("users")
+}
