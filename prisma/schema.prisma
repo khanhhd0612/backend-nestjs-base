@@ -21,3 +21,12 @@ model User {
 
     @@map("users")
 }
+
+model BlacklistedToken {
+    id        String   @id @default(auto()) @map("_id") @db.ObjectId
+    jti       String   @unique
+    userId    String   @db.ObjectId
+    expiresAt DateTime @map("expires_at") //thời điểm token gốc hết hạn
+
+    @@map("blacklisted_tokens")
+}

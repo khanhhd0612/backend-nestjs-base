@@ -26,6 +26,7 @@ import { AllExceptionsFilter } from '@/common/filters/http-exception.filter';
 
 import { HealthModule } from './modules/health/health.module';
 import { MetaModule } from './modules/meta/meta.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
     imports: [
@@ -65,6 +66,7 @@ import { MetaModule } from './modules/meta/meta.module';
         PrismaModule,
         HealthModule,
         MetaModule,
+        AuthModule
     ],
 
     providers: [
