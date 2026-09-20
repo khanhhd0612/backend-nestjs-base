@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenStrategy } from './strategies/refresh.strategy';
 import { TokenBlacklistRepository } from './token-blacklist.repository';
+import { SessionRepository } from './session.repository';
 
 @Module({
     imports: [
@@ -23,7 +24,7 @@ import { TokenBlacklistRepository } from './token-blacklist.repository';
         }),
     ],
     controllers: [AuthController],
-    providers: [AuthService, JwtStrategy, RefreshTokenStrategy, TokenBlacklistRepository,],
+    providers: [AuthService, JwtStrategy, RefreshTokenStrategy, TokenBlacklistRepository, SessionRepository],
     exports: [AuthService],
 })
 export class AuthModule { }
