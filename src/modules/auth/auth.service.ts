@@ -10,7 +10,15 @@ import { RegisterDto } from './dto/register.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { Prisma } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
-import { TokenBlacklistRepository } from './token-blacklist.repository'
+import { TokenBlacklistRepository } from './token-blacklist.repository';
+import { SessionRepository } from './session.repository';
+import { parseDeviceName } from '@common/utils/device.util';
+
+interface DeviceInfo {
+    userAgent?: string;
+    ip?: string;
+
+}
 
 @Injectable()
 export class AuthService {
@@ -19,9 +27,10 @@ export class AuthService {
         private readonly jwtService: JwtService,
         private readonly configService: ConfigService,
         private readonly tokenBlacklistRepository: TokenBlacklistRepository,
+        private readonly sessionRepository: SessionRepository,
     ) { }
 
-    async login(dto: LoginDto): Promise<AuthResponseDto> {
+    async login(dto: LoginDto, deviceInfo?: DeviceInfo): Promise<AuthResponseDto> {
         const user = await this.userService.findByEmail(dto.email);
         if (!user) {
             throw new BusinessException(
@@ -49,7 +58,10 @@ export class AuthService {
             );
         }
 
-        return this.generateTokens({ sub: user.id, email: user.email, role: user.role });
+        return this.generateTokens(
+            { sub: user.id, email: user.email, role: user.role },
+            { userAgent: deviceInfo?.userAgent, ip: deviceInfo?.ip }
+        );
     }
 
     async register(dto: RegisterDto) {
@@ -137,7 +149,10 @@ export class AuthService {
         await this.userService.changePassword(userId, newHash);
     }
 
-    private generateTokens(payload: { sub: string; email: string; role: string }): AuthResponseDto {
+    private async generateTokens(
+        payload: { sub: string; email: string; role: string },
+        deviceInfo?: { userAgent?: string; ip?: string },
+    ): Promise<AuthResponseDto> {
         const accessJti = uuidv4();
         const refreshJti = uuidv4();
 
@@ -155,6 +170,71 @@ export class AuthService {
             expiresIn: this.configService.get<string>('jwt.refreshExpiresIn'),
         });
 
+        const decodedRefresh = this.jwtService.decode(refreshToken) as { exp: number };
+        await this.sessionRepository.create({
+            userId: payload.sub,
+            jti: refreshJti,
+            userAgent: deviceInfo?.userAgent,
+            ip: deviceInfo?.ip,
+            deviceName: parseDeviceName(deviceInfo?.userAgent),
+            expiresAt: new Date(decodedRefresh.exp * 1000),
+        });
+
         return { accessToken, refreshToken };
+    }
+
+    async getSessions(userId: string) {
+        const sessions = await this.sessionRepository.findActiveByUser(userId);
+        return sessions.map((s) => ({
+            id: s.id,
+            deviceName: s.deviceName,
+            ip: s.ip,
+            createdAt: s.createdAt,
+            lastUsedAt: s.lastUsedAt,
+        }));
+    }
+
+    async revokeSession(userId: string, sessionId: string) {
+        const session = await this.sessionRepository.findById(sessionId);
+        if (!session || session.userId !== userId) {
+            throw new BusinessException(
+                ErrorCode.SESSION_NOT_FOUND,
+                HttpStatus.NOT_FOUND,
+                ErrorMessage[ErrorCode.SESSION_NOT_FOUND]
+            );
+        }
+
+        await this.sessionRepository.revoke(sessionId);
+        await this.tokenBlacklistRepository.create({
+            jti: session.jti,
+            userId,
+            expiresAt: session.expiresAt,
+        });
+    }
+
+    async revokeOtherSessions(userId: string, refreshToken?: string) {
+        if (!refreshToken) {
+            throw new BusinessException(
+                ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED,
+                HttpStatus.BAD_REQUEST,
+                ErrorMessage[ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED],
+            );
+        }
+
+        const decodedRefresh = this.jwtService.decode(refreshToken) as { jti: string };
+        const currentJti = decodedRefresh.jti
+
+        const sessions = await this.sessionRepository.findActiveByUser(userId);
+        const toRevoke = sessions.filter((s) => s.jti !== currentJti);
+
+        for (const s of toRevoke) {
+            await this.tokenBlacklistRepository.create({
+                jti: s.jti,
+                userId,
+                expiresAt: s.expiresAt,
+            });
+        }
+
+        await this.sessionRepository.revokeAllExcept(userId, currentJti);
     }
 }

@@ -1,5 +1,6 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, Req, Get, Delete, Param } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Request } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '@common/decorators/public.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
@@ -8,7 +9,6 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto'
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LogoutDto } from './dto/logout.dto';
-import { JwtService } from '@nestjs/jwt';
 import { ChangePasswordDto } from './dto/change-password.dto';
 
 @ApiTags('Auth')
@@ -16,15 +16,17 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 export class AuthController {
     constructor(
         private readonly authService: AuthService,
-        private readonly jwtService: JwtService,
 
     ) { }
 
     @Public()
     @Post('login')
     @ApiOperation({ summary: 'Đăng nhập bằng email/password, trả về access & refresh token' })
-    async login(@Body() dto: LoginDto) {
-        const result = await this.authService.login(dto);
+    async login(@Body() dto: LoginDto, @Req() req: Request) {
+        const result = await this.authService.login(dto, {
+            userAgent: req.headers['user-agent'],
+            ip: req.ip,
+        });
         return { message: 'Đăng nhập thành công', data: result };
     }
 
@@ -72,5 +74,32 @@ export class AuthController {
         );
 
         return { message: 'Đổi mật khẩu thành công', };
+    }
+
+    @UseGuards(AuthGuard('jwt'))
+    @ApiBearerAuth()
+    @Get('sessions')
+    @ApiOperation({ summary: 'Danh sách thiết bị đang đăng nhập' })
+    async getSessions(@CurrentUser() user: any) {
+        const sessions = await this.authService.getSessions(user.userId);
+        return { message: 'Lấy danh sách thiết bị thành công', data: sessions };
+    }
+
+    @UseGuards(AuthGuard('jwt'))
+    @ApiBearerAuth()
+    @Delete('sessions/:id')
+    @ApiOperation({ summary: 'Đăng xuất từ xa một thiết bị cụ thể' })
+    async revokeSession(@CurrentUser() user: any, @Param('id') sessionId: string) {
+        await this.authService.revokeSession(user.userId, sessionId);
+        return { message: 'Đã đăng xuất thiết bị' };
+    }
+
+    @UseGuards(AuthGuard('jwt'))
+    @ApiBearerAuth()
+    @Delete('sessions')
+    @ApiOperation({ summary: 'Đăng xuất tất cả thiết bị khác (giữ lại thiết bị hiện tại)' })
+    async revokeOtherSessions(@CurrentUser() user: any, @Body() dto: LogoutDto) {
+        await this.authService.revokeOtherSessions(user.sub, dto.refreshToken);
+        return { message: 'Đã đăng xuất tất cả thiết bị khác' };
     }
 }

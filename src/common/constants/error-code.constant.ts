@@ -24,6 +24,8 @@ export enum ErrorCode {
     AUTH_ACCOUNT_LOCKED = 'AUTH_ACCOUNT_LOCKED',
     AUTH_ACCOUNT_NOT_VERIFIED = 'AUTH_ACCOUNT_NOT_VERIFIED',
     INVALID_OLD_PASSWORD = 'INVALID_OLD_PASSWORD',
+    SESSION_NOT_FOUND = 'SESSION_NOT_FOUND',
+    AUTH_REFRESH_TOKEN_REQUIRED = 'AUTH_REFRESH_TOKEN_REQUIRED',
 
     // User
     USER_NOT_FOUND = 'USER_NOT_FOUND',
@@ -53,4 +55,6 @@ export const ErrorMessage: Record<ErrorCode, string> = {
     [ErrorCode.USER_ALREADY_EXISTS]: 'Người dùng đã tồn tại',
     [ErrorCode.USER_EMAIL_ALREADY_EXISTS]: 'Email đã được sử dụng',
     [ErrorCode.INVALID_OLD_PASSWORD]: 'Mật khẩu cũ không hợp lệ',
+    [ErrorCode.SESSION_NOT_FOUND]: 'Không tìm thấy phiên đăng nhập',
+    [ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED]: 'Refresh token là bắt buộc',
 };
