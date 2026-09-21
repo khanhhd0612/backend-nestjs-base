@@ -10,6 +10,8 @@ import { RegisterDto } from './dto/register.dto'
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -101,5 +103,19 @@ export class AuthController {
     async revokeOtherSessions(@CurrentUser() user: any, @Body() dto: LogoutDto) {
         await this.authService.revokeOtherSessions(user.sub, dto.refreshToken);
         return { message: 'Đã đăng xuất tất cả thiết bị khác' };
+    }
+
+    @Public()
+    @Post('forgot-password')
+    @ApiOperation({ summary: 'Yêu cầu gửi link đặt lại mật khẩu qua email' })
+    async forgotPassword(@Body() dto: ForgotPasswordDto) {
+        return this.authService.forgotPassword(dto.email);
+    }
+
+    @Public()
+    @Post('reset-password')
+    @ApiOperation({ summary: 'Đặt lại mật khẩu bằng token nhận được qua email' })
+    async resetPassword(@Body() dto: ResetPasswordDto) {
+        return this.authService.resetPassword(dto.token, dto.newPassword);
     }
 }

@@ -40,6 +40,15 @@ export const envValidationSchema = Joi.object({
     LOG_LEVEL: Joi.string()
         .valid('error', 'warn', 'info', 'http', 'debug')
         .default('debug'),
+    // docs
+    SWAGGER_ENABLED: Joi.boolean().default(true),
 
-    SWAGGER_ENABLED: Joi.boolean().default(true)
+    // Mailjet
+    MAILJET_API_KEY: Joi.string().required(),
+    MAILJET_SECRET_KEY: Joi.string().required(),
+    MAILJET_FROM_EMAIL: Joi.string().email().required(),
+    MAILJET_FROM_NAME: Joi.string().required(),
+
+    // Frontend
+    FRONTEND_URL: Joi.string().uri().required(),
 });
