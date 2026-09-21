@@ -10,9 +10,12 @@ import { RegisterDto } from './dto/register.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { Prisma } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
-import { TokenBlacklistRepository } from './token-blacklist.repository';
-import { SessionRepository } from './session.repository';
+import { TokenBlacklistRepository } from './repositories/token-blacklist.repository';
+import { SessionRepository } from './repositories/session.repository';
 import { parseDeviceName } from '@common/utils/device.util';
+import { generateRawToken, hashToken } from '@common/utils/token-hash.util';
+import { MailService } from '@shared/mail/mail.service';
+import { PasswordResetRepository } from './repositories/password-reset.repository';
 
 interface DeviceInfo {
     userAgent?: string;
@@ -28,7 +31,13 @@ export class AuthService {
         private readonly configService: ConfigService,
         private readonly tokenBlacklistRepository: TokenBlacklistRepository,
         private readonly sessionRepository: SessionRepository,
+        private readonly passwordResetRepository: PasswordResetRepository,
+        private readonly mailService: MailService,
     ) { }
+
+    private readonly RESET_TOKEN_TTL_MINUTES = 15;
+    private readonly RESET_RATE_LIMIT_WINDOW_MINUTES = 60;
+    private readonly RESET_RATE_LIMIT_MAX_REQUESTS = 3;
 
     async login(dto: LoginDto, deviceInfo?: DeviceInfo): Promise<AuthResponseDto> {
         const user = await this.userService.findByEmail(dto.email);
@@ -236,5 +245,68 @@ export class AuthService {
         }
 
         await this.sessionRepository.revokeAllExcept(userId, currentJti);
+    }
+
+    async forgotPassword(email: string) {
+        const windowStart = new Date(
+            Date.now() - this.RESET_RATE_LIMIT_WINDOW_MINUTES * 60 * 1000,
+        );
+
+        const recentCount = await this.passwordResetRepository.countRecentByEmail(
+            email,
+            windowStart,
+        );
+
+        if (recentCount >= this.RESET_RATE_LIMIT_MAX_REQUESTS) {
+            throw new BusinessException(
+                ErrorCode.PASSWORD_RESET_RATE_LIMITED,
+                HttpStatus.TOO_MANY_REQUESTS,
+                ErrorMessage[ErrorCode.PASSWORD_RESET_RATE_LIMITED],
+            );
+        }
+
+        const user = await this.userService.findByEmail(email);
+        const rawToken = generateRawToken();
+        const tokenHash = hashToken(rawToken);
+        const expiresAt = new Date(
+            Date.now() + this.RESET_TOKEN_TTL_MINUTES * 60 * 1000,
+        );
+
+        await this.passwordResetRepository.create({
+            email,
+            userId: user?.id ?? null,
+            tokenHash,
+            expiresAt,
+            usedAt: null
+        });
+
+        if (user) {
+            await this.mailService.sendPasswordResetEmail(user.email, rawToken);
+        }
+
+        return {
+            message: 'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi link đặt lại mật khẩu',
+        };
+    }
+
+    async resetPassword(token: string, newPassword: string) {
+        const tokenHash = hashToken(token);
+        const record = await this.passwordResetRepository.findValidByHash(tokenHash);
+
+        if (!record || !record.userId) {
+            throw new BusinessException(
+                ErrorCode.PASSWORD_RESET_TOKEN_INVALID,
+                HttpStatus.BAD_REQUEST,
+                ErrorMessage[ErrorCode.PASSWORD_RESET_TOKEN_INVALID],
+            );
+        }
+
+        const newHash = await bcrypt.hash(newPassword, 10);
+
+        await this.userService.changePassword(record.userId, newHash);
+
+        await this.passwordResetRepository.markUsed(record.id);
+
+        return { message: 'Đặt lại mật khẩu thành công, vui lòng đăng nhập lại' };
     }
 }

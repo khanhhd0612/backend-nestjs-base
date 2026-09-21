@@ -5,10 +5,11 @@ import * as bcrypt from 'bcrypt';
 import { Prisma } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { UserService } from '@modules/user/user.service';
-import { TokenBlacklistRepository } from './token-blacklist.repository';
-import { SessionRepository } from './session.repository';
-import { BusinessException } from '@common/exceptions/business.exception';
+import { TokenBlacklistRepository } from './repositories/token-blacklist.repository';
+import { SessionRepository } from './repositories/session.repository';
 import { ErrorCode } from '@common/constants/error-code.constant';
+import { PasswordResetRepository } from './repositories/password-reset.repository';
+import { MailService } from '@/shared/mail/mail.service';
 
 jest.mock('bcrypt');
 jest.mock('@common/utils/device.util', () => ({
@@ -22,6 +23,8 @@ describe('AuthService', () => {
     let configService: jest.Mocked<ConfigService>;
     let tokenBlacklistRepository: jest.Mocked<TokenBlacklistRepository>;
     let sessionRepository: jest.Mocked<SessionRepository>;
+    let passwordResetRepository: jest.Mocked<PasswordResetRepository>;
+    let mailService: jest.Mocked<MailService>;
 
     const mockUser = {
         id: 'user-id-1',
@@ -80,6 +83,21 @@ describe('AuthService', () => {
                         revokeAllExcept: jest.fn(),
                     },
                 },
+                {
+                    provide: PasswordResetRepository,
+                    useValue: {
+                        countRecentByEmail: jest.fn(),
+                        create: jest.fn(),
+                        findValidByHash: jest.fn(),
+                        markUsed: jest.fn(),
+                    },
+                },
+                {
+                    provide: MailService,
+                    useValue: {
+                        sendPasswordResetEmail: jest.fn(),
+                    },
+                },
             ],
         }).compile();
 
@@ -89,6 +107,8 @@ describe('AuthService', () => {
         configService = module.get(ConfigService);
         tokenBlacklistRepository = module.get(TokenBlacklistRepository);
         sessionRepository = module.get(SessionRepository);
+        passwordResetRepository = module.get(PasswordResetRepository);
+        mailService = module.get(MailService);
 
         // Config mặc định dùng chung cho hầu hết test case
         configService.get.mockImplementation((key: string) => {
@@ -495,6 +515,235 @@ describe('AuthService', () => {
             expect(sessionRepository.findActiveByUser).not.toHaveBeenCalled();
             expect(tokenBlacklistRepository.create).not.toHaveBeenCalled();
             expect(sessionRepository.revokeAllExcept).not.toHaveBeenCalled();
+        });
+    });
+    // ---------------------------------------------------------------------
+    // forgotPassword
+    // ---------------------------------------------------------------------
+    describe('forgotPassword', () => {
+        const email = 'user@example.com';
+
+        beforeEach(() => {
+            passwordResetRepository.countRecentByEmail.mockResolvedValue(0);
+        });
+
+        it('gửi email reset password thành công khi user tồn tại', async () => {
+            userService.findByEmail.mockResolvedValue(mockUser as any);
+
+            passwordResetRepository.create.mockResolvedValue({
+                id: 'reset-id-1',
+            } as any);
+
+            mailService.sendPasswordResetEmail.mockResolvedValue(undefined);
+
+            const result = await service.forgotPassword(email);
+
+            expect(
+                passwordResetRepository.countRecentByEmail,
+            ).toHaveBeenCalledWith(
+                email,
+                expect.any(Date),
+            );
+
+            expect(passwordResetRepository.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    email,
+                    userId: mockUser.id,
+                    tokenHash: expect.any(String),
+                    expiresAt: expect.any(Date),
+                    usedAt: null,
+                }),
+            );
+
+            expect(
+                mailService.sendPasswordResetEmail,
+            ).toHaveBeenCalledWith(
+                mockUser.email,
+                expect.any(String),
+            );
+
+            expect(result).toEqual({
+                message:
+                    'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi link đặt lại mật khẩu',
+            });
+        });
+
+        it('không gửi email nếu email không tồn tại nhưng vẫn tạo reset record', async () => {
+            userService.findByEmail.mockResolvedValue(null);
+
+            passwordResetRepository.create.mockResolvedValue({
+                id: 'reset-id-1',
+            } as any);
+
+            const result = await service.forgotPassword(email);
+
+            expect(userService.findByEmail).toHaveBeenCalledWith(email);
+
+            expect(passwordResetRepository.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    email,
+                    userId: null,
+                    tokenHash: expect.any(String),
+                    expiresAt: expect.any(Date),
+                    usedAt: null,
+                }),
+            );
+
+            expect(
+                mailService.sendPasswordResetEmail,
+            ).not.toHaveBeenCalled();
+
+            expect(result).toEqual({
+                message:
+                    'Nếu email tồn tại trong hệ thống, chúng tôi đã gửi link đặt lại mật khẩu',
+            });
+        });
+
+        it('throw PASSWORD_RESET_RATE_LIMITED khi vượt quá số lần cho phép', async () => {
+            passwordResetRepository.countRecentByEmail.mockResolvedValue(5);
+
+            await expect(
+                service.forgotPassword(email),
+            ).rejects.toMatchObject({
+                errorCode: ErrorCode.PASSWORD_RESET_RATE_LIMITED,
+            });
+
+            expect(userService.findByEmail).not.toHaveBeenCalled();
+
+            expect(passwordResetRepository.create).not.toHaveBeenCalled();
+
+            expect(
+                mailService.sendPasswordResetEmail,
+            ).not.toHaveBeenCalled();
+        });
+
+        it('đếm request gần đây với đúng email và windowStart', async () => {
+            passwordResetRepository.countRecentByEmail.mockResolvedValue(0);
+            userService.findByEmail.mockResolvedValue(null);
+
+            await service.forgotPassword(email);
+
+            expect(
+                passwordResetRepository.countRecentByEmail,
+            ).toHaveBeenCalledWith(
+                email,
+                expect.any(Date),
+            );
+        });
+    });
+    // ---------------------------------------------------------------------
+    // resetPassword
+    // ---------------------------------------------------------------------
+    describe('resetPassword', () => {
+        const token = 'raw-reset-token';
+        const newPassword = 'new-password';
+
+        it('đặt lại mật khẩu thành công', async () => {
+            passwordResetRepository.findValidByHash.mockResolvedValue(
+                {
+                    id: 'reset-id-1',
+                    userId: mockUser.id,
+                    email: mockUser.email,
+                    tokenHash: 'hashed-token',
+                    expiresAt: new Date(
+                        Date.now() + 60 * 60 * 1000,
+                    ),
+                    usedAt: null,
+                } as any,
+            );
+
+            (bcrypt.hash as jest.Mock).mockResolvedValue(
+                'new-hashed-password',
+            );
+
+            userService.changePassword.mockResolvedValue(
+                mockUser as any,
+            );
+
+            passwordResetRepository.markUsed.mockResolvedValue(
+                {} as any,
+            );
+
+            const result = await service.resetPassword(
+                token,
+                newPassword,
+            );
+
+            expect(
+                passwordResetRepository.findValidByHash,
+            ).toHaveBeenCalledWith(
+                expect.any(String),
+            );
+
+            expect(bcrypt.hash).toHaveBeenCalledWith(
+                newPassword,
+                10,
+            );
+
+            expect(
+                userService.changePassword,
+            ).toHaveBeenCalledWith(
+                mockUser.id,
+                'new-hashed-password',
+            );
+
+            expect(
+                passwordResetRepository.markUsed,
+            ).toHaveBeenCalledWith(
+                'reset-id-1',
+            );
+
+            expect(result).toEqual({
+                message:
+                    'Đặt lại mật khẩu thành công, vui lòng đăng nhập lại',
+            });
+        });
+
+        it('throw PASSWORD_RESET_TOKEN_INVALID nếu token không tồn tại hoặc đã hết hạn', async () => {
+            passwordResetRepository.findValidByHash.mockResolvedValue(null);
+
+            await expect(
+                service.resetPassword(token, newPassword),
+            ).rejects.toMatchObject({
+                errorCode: ErrorCode.PASSWORD_RESET_TOKEN_INVALID,
+            });
+
+            expect(bcrypt.hash).not.toHaveBeenCalled();
+
+            expect(
+                userService.changePassword,
+            ).not.toHaveBeenCalled();
+
+            expect(
+                passwordResetRepository.markUsed,
+            ).not.toHaveBeenCalled();
+        });
+
+        it('throw PASSWORD_RESET_TOKEN_INVALID nếu reset record không có userId', async () => {
+            passwordResetRepository.findValidByHash.mockResolvedValue({
+                id: 'reset-id-1',
+                userId: null,
+                email: mockUser.email,
+                tokenHash: 'hashed-token',
+                expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+                usedAt: null,
+            } as any);
+
+            await expect(
+                service.resetPassword(token, newPassword),
+            ).rejects.toMatchObject({
+                errorCode: ErrorCode.PASSWORD_RESET_TOKEN_INVALID,
+            });
+
+            expect(bcrypt.hash).not.toHaveBeenCalled();
+
+            expect(
+                userService.changePassword,
+            ).not.toHaveBeenCalled();
+
+            expect(
+                passwordResetRepository.markUsed,
+            ).not.toHaveBeenCalled();
         });
     });
 });

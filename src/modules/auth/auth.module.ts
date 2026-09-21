@@ -7,8 +7,10 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenStrategy } from './strategies/refresh.strategy';
-import { TokenBlacklistRepository } from './token-blacklist.repository';
-import { SessionRepository } from './session.repository';
+import { TokenBlacklistRepository } from './repositories/token-blacklist.repository';
+import { SessionRepository } from './repositories/session.repository';
+import { PasswordResetRepository } from './repositories/password-reset.repository';
+import { MailService } from '@/shared/mail/mail.service';
 
 @Module({
     imports: [
@@ -24,7 +26,14 @@ import { SessionRepository } from './session.repository';
         }),
     ],
     controllers: [AuthController],
-    providers: [AuthService, JwtStrategy, RefreshTokenStrategy, TokenBlacklistRepository, SessionRepository],
+    providers: [
+        AuthService,
+        JwtStrategy,
+        RefreshTokenStrategy,
+        TokenBlacklistRepository,
+        SessionRepository,
+        PasswordResetRepository,
+        MailService,],
     exports: [AuthService],
 })
 export class AuthModule { }

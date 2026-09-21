@@ -26,6 +26,8 @@ export enum ErrorCode {
     INVALID_OLD_PASSWORD = 'INVALID_OLD_PASSWORD',
     SESSION_NOT_FOUND = 'SESSION_NOT_FOUND',
     AUTH_REFRESH_TOKEN_REQUIRED = 'AUTH_REFRESH_TOKEN_REQUIRED',
+    PASSWORD_RESET_RATE_LIMITED = 'PASSWORD_RESET_RATE_LIMITED',
+    PASSWORD_RESET_TOKEN_INVALID = 'PASSWORD_RESET_TOKEN_INVALID',
 
     // User
     USER_NOT_FOUND = 'USER_NOT_FOUND',
@@ -57,4 +59,6 @@ export const ErrorMessage: Record<ErrorCode, string> = {
     [ErrorCode.INVALID_OLD_PASSWORD]: 'Mật khẩu cũ không hợp lệ',
     [ErrorCode.SESSION_NOT_FOUND]: 'Không tìm thấy phiên đăng nhập',
     [ErrorCode.AUTH_REFRESH_TOKEN_REQUIRED]: 'Refresh token là bắt buộc',
+    [ErrorCode.PASSWORD_RESET_RATE_LIMITED]: 'Bạn đã yêu cầu quá nhiều lần, vui lòng thử lại sau',
+    [ErrorCode.PASSWORD_RESET_TOKEN_INVALID]: 'Token không hợp lệ hoặc đã hết hạn',
 };
