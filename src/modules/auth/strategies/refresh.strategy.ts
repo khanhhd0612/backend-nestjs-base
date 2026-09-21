@@ -5,7 +5,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
 import { JwtPayload } from './jwt.strategy';
 import { UserRepository } from '@modules/user/user.repository';
-import { TokenBlacklistRepository } from '@modules/auth/token-blacklist.repository';
+import { TokenBlacklistRepository } from '@modules/auth/repositories/token-blacklist.repository';
 
 @Injectable()
 export class RefreshTokenStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {

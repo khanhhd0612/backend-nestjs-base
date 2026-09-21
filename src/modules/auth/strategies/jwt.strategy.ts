@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UserRepository } from '@modules/user/user.repository';
-import { TokenBlacklistRepository } from '@modules/auth/token-blacklist.repository';
+import { TokenBlacklistRepository } from '@modules/auth/repositories/token-blacklist.repository';
 
 export interface JwtPayload {
     sub: string;
